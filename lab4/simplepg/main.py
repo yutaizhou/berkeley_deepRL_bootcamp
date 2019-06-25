@@ -46,8 +46,10 @@ def point_get_grad_logp_action(theta, ob, action):
     :param action: A vector of size |A|
     :return: A matrix of size |A| * (|S|+1)
     """
-    grad = np.zeros_like(theta)
     "*** YOUR CODE HERE ***"
+    ob_1 = include_bias(ob)
+    mean = theta @ ob_1
+    grad = np.outer((action - mean), ob_1)
     return grad
 
 
@@ -112,8 +114,13 @@ def cartpole_get_grad_logp_action(theta, ob, action):
     :param action: An integer
     :return: A matrix of size |A| * (|S|+1)
     """
-    grad = np.zeros_like(theta)
     "*** YOUR CODE HERE ***"
+    ob_1 = include_bias(ob)
+    num_actions = theta.shape[0]
+    one_hot = np.zeros(num_actions)
+    one_hot[action] = 1
+    p = np.exp(cartpole_get_logp_action(theta, ob, range(num_actions)))
+    grad = np.outer((one_hot - p), ob_1)
     return grad
 
 
@@ -245,9 +252,10 @@ def main(env_id, batch_size, discount, learning_rate, n_itrs, render, use_baseli
                     matrix of size |A| * (|S|+1) )
                     :return: A tuple, consisting of a scalar and a matrix of size |A| * (|S|+1)
                     """
-                    R_t = 0.
-                    pg_theta = np.zeros_like(theta)
                     "*** YOUR CODE HERE ***"
+                    R_t = r_t + discount * R_tplus1
+                    pg_theta = get_grad_logp_action(theta, s_t, a_t) * (R_t - b_t)
+
                     return R_t, pg_theta
 
                 # Test the implementation, but only once
@@ -279,6 +287,7 @@ def main(env_id, batch_size, discount, learning_rate, n_itrs, render, use_baseli
             baselines = np.zeros(len(all_returns))
             for t in range(len(all_returns)):
                 "*** YOUR CODE HERE ***"
+                baselines[t] = 0 if len(all_returns[t]) == 0 else np.mean(all_returns[t])
             return baselines
 
         if use_baseline:
@@ -304,10 +313,13 @@ def main(env_id, batch_size, discount, learning_rate, n_itrs, render, use_baseli
                 :return: A matrix of size (|A|*(|S|+1)) * (|A|*(|S|+1)), i.e. #columns and #rows are the number of 
                 entries in theta
                 """
-                d = len(theta.flatten())
-                F = np.zeros((d, d))
                 "*** YOUR CODE HERE ***"
-                return F
+                d = np.prod(theta.shape)
+                F = np.zeros((d, d))
+                for obs, action in zip(all_observations, all_actions):
+                    glp = get_grad_logp_action(theta, obs, action).flatten()
+                    F += np.outer(glp, glp.T)
+                return F / len(all_actions)
 
             def compute_natural_gradient(F, grad, reg=1e-4):
                 """
@@ -316,9 +328,11 @@ def main(env_id, batch_size, discount, learning_rate, n_itrs, render, use_baseli
                 :param reg: A scalar
                 :return: A matrix of size |A| * (|S|+1)
                 """
-                natural_grad = np.zeros_like(grad)
                 "*** YOUR CODE HERE ***"
-                return natural_grad
+                F_inv = np.linalg.inv(F + reg * np.eye(F.shape[0]))
+                natural_grad = F_inv @ grad.flatten()
+
+                return natural_grad.reshape(grad.shape)
 
             def compute_step_size(F, natural_grad, natural_step_size):
                 """
@@ -327,8 +341,8 @@ def main(env_id, batch_size, discount, learning_rate, n_itrs, render, use_baseli
                 :param natural_step_size: A scalar
                 :return: A scalar
                 """
-                step_size = 0.
                 "*** YOUR CODE HERE ***"
+                step_size = np.sqrt((2 * natural_step_size) / (natural_grad.flatten() @ F @ natural_grad.flatten()))
                 return step_size
 
             test_once(compute_fisher_matrix)
